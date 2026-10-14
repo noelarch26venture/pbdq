@@ -230,6 +230,36 @@ function endPointer(e){
  else{gesture=null;gestureBlocked=false}
 }
 ['pointerup','pointercancel','lostpointercapture'].forEach(type=>stage.addEventListener(type,endPointer));
+// Fallback per Safari/iOS meno recenti che non espongono Pointer Events.
+if(!('PointerEvent' in window)){
+ let touchDrawing=false,touchLast=null,touchPinch=null;
+ const touchPoint=t=>({clientX:t.clientX,clientY:t.clientY});
+ stage.addEventListener('touchstart',e=>{
+  e.preventDefault();
+  if(clean){exitClean();return}
+  if(e.touches.length>=2){
+   touchDrawing=false;touchLast=null;drawing=false;
+   const a=e.touches[0],b=e.touches[1];
+   touchPinch={dist:Math.max(1,Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)),zoom,mid:{x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2},panX,panY};
+   return;
+  }
+  if(e.touches.length===1){touchPinch=null;touchDrawing=true;drawing=true;touchLast=imagePoint(touchPoint(e.touches[0]));last=touchLast;snapshot();erase(touchLast,touchLast)}
+ },{passive:false});
+ stage.addEventListener('touchmove',e=>{
+  e.preventDefault();
+  if(e.touches.length>=2){
+   touchDrawing=false;drawing=false;last=null;
+   if(!touchPinch){const a=e.touches[0],b=e.touches[1];touchPinch={dist:Math.max(1,Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY)),zoom,mid:{x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2},panX,panY};}
+   const a=e.touches[0],b=e.touches[1],m={x:(a.clientX+b.clientX)/2,y:(a.clientY+b.clientY)/2},d=Math.max(1,Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY));
+   zoom=Math.max(.5,Math.min(5,touchPinch.zoom*d/touchPinch.dist));
+   panX=touchPinch.panX+(m.x-touchPinch.mid.x)*stage.clientWidth/canvas.width;
+   panY=touchPinch.panY+(m.y-touchPinch.mid.y)*stage.clientHeight/canvas.height;requestRender();return;
+  }
+  if(touchDrawing&&e.touches.length===1){const n=imagePoint(touchPoint(e.touches[0]));erase(touchLast,n);touchLast=n;last=n;}
+ },{passive:false});
+ const endTouch=e=>{e.preventDefault();if(e.touches.length===0){touchDrawing=false;touchLast=null;touchPinch=null;stopStroke()}else if(e.touches.length===1){touchDrawing=false;touchLast=null;touchPinch=null;stopStroke()}};
+ stage.addEventListener('touchend',endTouch,{passive:false});stage.addEventListener('touchcancel',endTouch,{passive:false});
+}
 stage.addEventListener('contextmenu',e=>e.preventDefault());
 
 async function startCamera(){
