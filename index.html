@@ -87,18 +87,21 @@ body.clean .stage{position:fixed;inset:0;width:100vw;height:100dvh;max-height:no
 'use strict';
 const $=id=>document.getElementById(id);
 const canvas=$('artCanvas'),ctx=canvas.getContext('2d'),stage=$('stage'),video=$('camera');
-let img=null,iw=0,ih=0,mask=null,mctx=null;
+let img=null,iw=0,ih=0,art=null,actx=null,artScale=1;
 let brushSize=28,zoom=1,panX=0,panY=0,undoStack=[],stream=null,clean=false;
 let pointers=new Map(),gesture=null,drawing=false,strokePointer=null,last=null;
 let raf=0,renderPending=false,gestureBlocked=false;
-const MAX_UNDO=8,MAX_MASK=1800;
+const MAX_UNDO=8,MAX_ART=1800;
 
 function toast(s){const el=$('toast');el.textContent=s;el.classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>el.classList.remove('show'),2300)}
-function makeMask(){
- const ratio=Math.min(1,MAX_MASK/Math.max(iw,ih));
- mask=document.createElement('canvas');
- mask.width=Math.max(1,Math.round(iw*ratio));mask.height=Math.max(1,Math.round(ih*ratio));
- mctx=mask.getContext('2d');
+function makeArt(){
+ artScale=Math.min(1,MAX_ART/Math.max(iw,ih));
+ art=document.createElement('canvas');
+ art.width=Math.max(1,Math.round(iw*artScale));
+ art.height=Math.max(1,Math.round(ih*artScale));
+ actx=art.getContext('2d',{willReadFrequently:true});
+ actx.clearRect(0,0,art.width,art.height);
+ actx.drawImage(img,0,0,art.width,art.height);
 }
 function resize(){
  const r=stage.getBoundingClientRect();if(!r.width||!r.height)return;
@@ -110,16 +113,15 @@ function transform(){
  return{scale,x:(canvas.width-iw*scale)/2+panX*canvas.width/stage.clientWidth,y:(canvas.height-ih*scale)/2+panY*canvas.height/stage.clientHeight};
 }
 function render(){
- if(!img||!canvas.width||!mask)return;
+ if(!img||!canvas.width||!art)return;
  ctx.clearRect(0,0,canvas.width,canvas.height);
  const t=transform(),dw=iw*t.scale,dh=ih*t.scale;
- ctx.drawImage(img,t.x,t.y,dw,dh);
- ctx.save();ctx.globalCompositeOperation='destination-out';ctx.drawImage(mask,t.x,t.y,dw,dh);ctx.restore();
+ ctx.drawImage(art,0,0,art.width,art.height,t.x,t.y,dw,dh);
 }
 function requestRender(){if(renderPending)return;renderPending=true;raf=requestAnimationFrame(()=>{renderPending=false;render()})}
 function loadImage(image){
  img=image;iw=image.naturalWidth||image.width;ih=image.naturalHeight||image.height;
- makeMask();undoStack=[];zoom=1;panX=panY=0;render();
+ makeArt();undoStack=[];zoom=1;panX=panY=0;render();
 }
 function loadDefault(){
  const urls=['https://upload.wikimedia.org/wikipedia/commons/6/6a/Mona_Lisa.jpg','https://commons.wikimedia.org/wiki/Special:FilePath/Mona_Lisa%2C_by_Leonardo_da_Vinci%2C_from_C2RMF_retouched.jpg'];let i=0;
@@ -136,11 +138,11 @@ $('upload').addEventListener('change',e=>{
  im.src=url;e.target.value='';
 });
 function snapshot(){
- try{undoStack.push(mctx.getImageData(0,0,mask.width,mask.height));if(undoStack.length>MAX_UNDO)undoStack.shift()}
+ try{undoStack.push(actx.getImageData(0,0,art.width,art.height));if(undoStack.length>MAX_UNDO)undoStack.shift()}
  catch(e){toast('Immagine troppo grande per Undo.')}
 }
-function undo(){if(!undoStack.length){toast('Niente da annullare.');return}mctx.putImageData(undoStack.pop(),0,0);requestRender()}
-function reset(){if(!mask)return;makeMask();undoStack=[];zoom=1;panX=panY=0;render()}
+function undo(){if(!undoStack.length){toast('Niente da annullare.');return}actx.putImageData(undoStack.pop(),0,0);requestRender()}
+function reset(){if(!art||!img)return;makeArt();undoStack=[];zoom=1;panX=panY=0;render()}
 $('undo').onclick=undo;$('reset').onclick=reset;
 
 function setBrush(v){
@@ -171,16 +173,16 @@ function imagePoint(e){
  return{x:Math.max(0,Math.min(iw,(p.x-t.x)/t.scale)),y:Math.max(0,Math.min(ih,(p.y-t.y)/t.scale))};
 }
 function erase(a,b){
- if(!drawing||!mctx||!a||!b)return;
- const sx=mask.width/iw,sy=mask.height/ih;
+ if(!drawing||!actx||!a||!b)return;
+ const sx=art.width/iw,sy=art.height/ih;
  const ax=a.x*sx,ay=a.y*sy,bx=b.x*sx,by=b.y*sy;
  // Keep the brush visually consistent at every zoom level.
  const screenRadius=brushSize*canvas.width/stage.clientWidth/2;
  const t=transform(),radius=Math.max(1,screenRadius/t.scale*(sx+sy)/2);
- mctx.save();mctx.globalCompositeOperation='destination-out';
- mctx.lineCap='round';mctx.lineJoin='round';mctx.lineWidth=radius*2;
- mctx.beginPath();mctx.moveTo(ax,ay);mctx.lineTo(bx,by);mctx.stroke();
- mctx.beginPath();mctx.arc(bx,by,radius,0,Math.PI*2);mctx.fill();mctx.restore();
+ actx.save();actx.globalCompositeOperation='destination-out';
+ actx.lineCap='round';actx.lineJoin='round';actx.lineWidth=radius*2;
+ actx.beginPath();actx.moveTo(ax,ay);actx.lineTo(bx,by);actx.stroke();
+ actx.beginPath();actx.arc(bx,by,radius,0,Math.PI*2);actx.fill();actx.restore();
  requestRender();
 }
 function mid(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
